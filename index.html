@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indicator Light Detector</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  h1 { font-size: 1.3rem; color: #c8c8e0; }
+
+  #video-container {
+    position: relative;
+    display: inline-block;
+    background: #000;
+    border: 2px solid #333;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  #webcam { display: block; max-width: 640px; width: 100%; }
+  #overlay {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: crosshair;
+  }
+
+  #status-display {
+    font-size: 2rem;
+    font-weight: bold;
+    padding: 8px 32px;
+    border-radius: 6px;
+    text-align: center;
+    min-width: 200px;
+    transition: background 0.2s;
+  }
+  .status-off     { background: #333; color: #888; }
+  .status-green   { background: #1b5e20; color: #a5d6a7; }
+  .status-red     { background: #b71c1c; color: #ef9a9a; }
+  .status-unknown { background: #4a148c; color: #ce93d8; }
+  .status-none    { background: #222; color: #555; }
+
+  #controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 24px;
+    background: #16213e;
+    padding: 12px 16px;
+    border-radius: 6px;
+    max-width: 640px;
+    width: 100%;
+    font-size: 0.85rem;
+  }
+  #controls label { display: flex; flex-direction: column; gap: 2px; }
+  #controls .row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  #controls input[type="range"] { flex: 1; }
+  #controls .val { min-width: 40px; text-align: right; font-variant-numeric: tabular-nums; }
+  #controls select, #controls button {
+    padding: 4px 8px;
+    border-radius: 3px;
+    border: 1px solid #444;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    cursor: pointer;
+  }
+  #controls button:hover { background: #2a2a4e; }
+  #controls .full-width { grid-column: 1 / -1; }
+
+  #debug {
+    font-size: 0.8rem;
+    font-family: monospace;
+    background: #0d1117;
+    padding: 8px 12px;
+    border-radius: 4px;
+    max-width: 640px;
+    width: 100%;
+    color: #8b949e;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  #debug .swatch {
+    display: inline-block;
+    width: 24px; height: 24px;
+    border: 1px solid #555;
+    border-radius: 3px;
+    vertical-align: middle;
+  }
+
+  #log {
+    max-width: 640px;
+    width: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    background: #0d1117;
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #8b949e;
+  }
+  #log .entry-green   { color: #a5d6a7; }
+  #log .entry-red     { color: #ef9a9a; }
+  #log .entry-off     { color: #888; }
+  #log .entry-unknown { color: #ce93d8; }
+</style>
+</head>
+<body>
+
+<h1>Indicator Light Detector</h1>
+
+<div id="video-container">
+  <video id="webcam" autoplay playsinline muted></video>
+  <canvas id="overlay"></canvas>
+</div>
+
+<div id="status-display" class="status-none">No ROI</div>
+
+<div id="controls">
+  <label class="full-width">
+    Camera
+    <select id="camera-select"><option value="">Loading…</option></select>
+  </label>
+
+  <label>
+    Analysis interval
+    <div class="row">
+      <input type="range" id="interval" min="50" max="1000" step="50" value="200">
+      <span class="val" id="interval-val">200ms</span>
+    </div>
+  </label>
+
+  <label>
+    Debounce count
+    <div class="row">
+      <input type="range" id="debounce" min="1" max="10" step="1" value="3">
+      <span class="val" id="debounce-val">3</span>
+    </div>
+  </label>
+
+  <label>
+    Brightness threshold (V)
+    <div class="row">
+      <input type="range" id="brightness" min="0" max="1" step="0.01" value="0.15">
+      <span class="val" id="brightness-val">0.15</span>
+    </div>
+  </label>
+
+  <label>
+    Saturation threshold (S)
+    <div class="row">
+      <input type="range" id="saturation" min="0" max="1" step="0.01" value="0.20">
+      <span class="val" id="saturation-val">0.20</span>
+    </div>
+  </label>
+
+  <label>
+    Green hue min
+    <div class="row">
+      <input type="range" id="green-min" min="0" max="360" step="1" value="80">
+      <span class="val" id="green-min-val">80</span>
+    </div>
+  </label>
+
+  <label>
+    Green hue max
+    <div class="row">
+      <input type="range" id="green-max" min="0" max="360" step="1" value="160">
+      <span class="val" id="green-max-val">160</span>
+    </div>
+  </label>
+
+  <label>
+    Red hue min (low)
+    <div class="row">
+      <input type="range" id="red-lo-max" min="0" max="90" step="1" value="30">
+      <span class="val" id="red-lo-max-val">0–30</span>
+    </div>
+  </label>
+
+  <label>
+    Red hue min (high)
+    <div class="row">
+      <input type="range" id="red-hi-min" min="270" max="360" step="1" value="330">
+      <span class="val" id="red-hi-min-val">330–360</span>
+    </div>
+  </label>
+
+  <label class="full-width">
+    <div class="row">
+      <input type="checkbox" id="alert-toggle">
+      Alert on state change (audio beep)
+    </div>
+  </label>
+
+  <div class="full-width" style="display:flex;gap:8px;">
+    <button id="clear-roi">Clear ROI</button>
+  </div>
+</div>
+
+<div id="debug">
+  <span>RGB: <span id="d-rgb">—</span> <span id="d-swatch" class="swatch"></span></span>
+  <span>HSV: <span id="d-hsv">—</span></span>
+  <span>State: <span id="d-state">—</span></span>
+</div>
+
+<div id="log"></div>
+
+<script>
+const video = document.getElementById('webcam');
+const overlay = document.getElementById('overlay');
+const overlayCtx = overlay.getContext('2d');
+const offscreen = document.createElement('canvas');
+const offCtx = offscreen.getContext('2d', { willReadFrequently: true });
+
+const statusDisplay = document.getElementById('status-display');
+const cameraSelect = document.getElementById('camera-select');
+const logDiv = document.getElementById('log');
+
+// Debug elements
+const dRgb = document.getElementById('d-rgb');
+const dHsv = document.getElementById('d-hsv');
+const dState = document.getElementById('d-state');
+const dSwatch = document.getElementById('d-swatch');
+
+// State
+let currentStream = null;
+let roi = null;          // { x, y, w, h } in video-native coords
+let drawing = false;
+let drawStart = null;    // { x, y } in video-native coords
+let currentState = null; // "GREEN" | "RED" | "OFF" | "UNKNOWN" | null
+let consecutiveCount = 0;
+let pendingState = null;
+let analysisTimer = null;
+let audioCtx = null;
+
+// --- Config helpers ---
+function cfg(id) { return document.getElementById(id); }
+
+function bindSlider(id, suffix, formatter) {
+  const el = cfg(id);
+  const valEl = cfg(id + '-val');
+  const update = () => { valEl.textContent = formatter ? formatter(el.value) : el.value + (suffix || ''); };
+  el.addEventListener('input', update);
+  update();
+  return el;
+}
+
+bindSlider('interval', 'ms');
+bindSlider('debounce');
+bindSlider('brightness');
+bindSlider('saturation');
+bindSlider('green-min');
+bindSlider('green-max');
+bindSlider('red-lo-max', '', v => `0–${v}`);
+bindSlider('red-hi-min', '', v => `${v}–360`);
+
+cfg('interval').addEventListener('input', restartAnalysis);
+
+// --- Camera ---
+async function enumerateCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevices = devices.filter(d => d.kind === 'videoinput');
+  cameraSelect.innerHTML = '';
+  if (videoDevices.length === 0) {
+    cameraSelect.innerHTML = '<option value="">No cameras found</option>';
+    return;
+  }
+  videoDevices.forEach((d, i) => {
+    const opt = document.createElement('option');
+    opt.value = d.deviceId;
+    opt.textContent = d.label || `Camera ${i + 1}`;
+    cameraSelect.appendChild(opt);
+  });
+}
+
+async function startCamera(deviceId) {
+  if (currentStream) {
+    currentStream.getTracks().forEach(t => t.stop());
+  }
+  const constraints = { video: deviceId ? { deviceId: { exact: deviceId } } : true };
+  try {
+    currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+  } catch (err) {
+    statusDisplay.textContent = 'Camera denied';
+    statusDisplay.className = 'status-off';
+    console.error('getUserMedia error:', err);
+    return;
+  }
+  video.srcObject = currentStream;
+
+  // Wait for video to be ready
+  await new Promise(resolve => {
+    video.onloadedmetadata = resolve;
+  });
+  await video.play();
+
+  const track = currentStream.getVideoTracks()[0];
+  const settings = track.getSettings();
+  const w = settings.width || video.videoWidth;
+  const h = settings.height || video.videoHeight;
+
+  offscreen.width = w;
+  offscreen.height = h;
+  overlay.width = w;
+  overlay.height = h;
+
+  roi = null;
+  currentState = null;
+  updateStatusDisplay(null);
+
+  // Re-enumerate to get labels (available after permission granted)
+  await enumerateCameras();
+  if (deviceId) cameraSelect.value = deviceId;
+}
+
+cameraSelect.addEventListener('change', () => startCamera(cameraSelect.value));
+
+// --- Coordinate conversion ---
+function screenToVideo(e) {
+  const rect = overlay.getBoundingClientRect();
+  const sx = video.videoWidth / rect.width;
+  const sy = video.videoHeight / rect.height;
+  return {
+    x: Math.round((e.clientX - rect.left) * sx),
+    y: Math.round((e.clientY - rect.top) * sy),
+  };
+}
+
+// --- ROI drawing ---
+overlay.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  drawing = true;
+  drawStart = screenToVideo(e);
+  roi = null;
+});
+
+overlay.addEventListener('mousemove', (e) => {
+  if (!drawing) return;
+  const pos = screenToVideo(e);
+  roi = normalizeRect(drawStart.x, drawStart.y, pos.x, pos.y);
+});
+
+overlay.addEventListener('mouseup', (e) => {
+  if (!drawing) return;
+  drawing = false;
+  const pos = screenToVideo(e);
+  roi = normalizeRect(drawStart.x, drawStart.y, pos.x, pos.y);
+  if (roi.w < 4 || roi.h < 4) roi = null; // too small
+  consecutiveCount = 0;
+  pendingState = null;
+  currentState = null;
+  updateStatusDisplay(null);
+});
+
+// Prevent drag-select text
+overlay.addEventListener('dragstart', e => e.preventDefault());
+
+function normalizeRect(x1, y1, x2, y2) {
+  const x = Math.max(0, Math.min(x1, x2));
+  const y = Math.max(0, Math.min(y1, y2));
+  const w = Math.min(Math.abs(x2 - x1), video.videoWidth - x);
+  const h = Math.min(Math.abs(y2 - y1), video.videoHeight - y);
+  return { x, y, w, h };
+}
+
+cfg('clear-roi').addEventListener('click', () => {
+  roi = null;
+  currentState = null;
+  pendingState = null;
+  consecutiveCount = 0;
+  updateStatusDisplay(null);
+  dRgb.textContent = '—';
+  dHsv.textContent = '—';
+  dState.textContent = '—';
+  dSwatch.style.background = 'transparent';
+});
+
+// --- RGB to HSV ---
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const d = max - min;
+  let h = 0;
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  if (d !== 0) {
+    if (max === r)      h = 60 * (((g - b) / d) % 6);
+    else if (max === g) h = 60 * ((b - r) / d + 2);
+    else                h = 60 * ((r - g) / d + 4);
+  }
+  if (h < 0) h += 360;
+  return { h, s, v };
+}
+
+// --- Classification ---
+function classify(h, s, v) {
+  const brightT = parseFloat(cfg('brightness').value);
+  const satT = parseFloat(cfg('saturation').value);
+  const greenMin = parseInt(cfg('green-min').value);
+  const greenMax = parseInt(cfg('green-max').value);
+  const redLoMax = parseInt(cfg('red-lo-max').value);
+  const redHiMin = parseInt(cfg('red-hi-min').value);
+
+  if (v < brightT) return 'OFF';
+  if (s < satT) return 'UNKNOWN';
+  if (h >= greenMin && h <= greenMax) return 'GREEN';
+  if (h <= redLoMax || h >= redHiMin) return 'RED';
+  return 'UNKNOWN';
+}
+
+// --- Analysis ---
+function analyzeFrame() {
+  if (!roi || video.readyState < 2) return;
+
+  offCtx.drawImage(video, 0, 0);
+  const imgData = offCtx.getImageData(roi.x, roi.y, roi.w, roi.h);
+  const data = imgData.data;
+  const pixelCount = roi.w * roi.h;
+  if (pixelCount === 0) return;
+
+  let rSum = 0, gSum = 0, bSum = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    rSum += data[i];
+    gSum += data[i + 1];
+    bSum += data[i + 2];
+  }
+  const avgR = rSum / pixelCount;
+  const avgG = gSum / pixelCount;
+  const avgB = bSum / pixelCount;
+  const hsv = rgbToHsv(avgR, avgG, avgB);
+  const state = classify(hsv.h, hsv.s, hsv.v);
+
+  // Update debug
+  dRgb.textContent = `${Math.round(avgR)}, ${Math.round(avgG)}, ${Math.round(avgB)}`;
+  dHsv.textContent = `${hsv.h.toFixed(1)}°  ${hsv.s.toFixed(2)}  ${hsv.v.toFixed(2)}`;
+  dState.textContent = state;
+  dSwatch.style.background = `rgb(${Math.round(avgR)},${Math.round(avgG)},${Math.round(avgB)})`;
+
+  // Debounce
+  const debounceN = parseInt(cfg('debounce').value);
+  if (state === pendingState) {
+    consecutiveCount++;
+  } else {
+    pendingState = state;
+    consecutiveCount = 1;
+  }
+
+  if (consecutiveCount >= debounceN && state !== currentState) {
+    const prev = currentState;
+    currentState = state;
+    updateStatusDisplay(state);
+    logStateChange(prev, state);
+    if (cfg('alert-toggle').checked) playBeep(state);
+  }
+}
+
+function updateStatusDisplay(state) {
+  if (!state) {
+    statusDisplay.textContent = 'No ROI';
+    statusDisplay.className = 'status-none';
+    return;
+  }
+  statusDisplay.textContent = state;
+  statusDisplay.className = 'status-' + state.toLowerCase();
+}
+
+function logStateChange(prev, next) {
+  const now = new Date();
+  const ts = now.toLocaleTimeString('en-GB', { hour12: false });
+  const entry = document.createElement('div');
+  entry.className = 'entry-' + next.toLowerCase();
+  entry.textContent = `[${ts}] ${prev || '—'} → ${next}`;
+  logDiv.appendChild(entry);
+  // Cap entries
+  while (logDiv.children.length > 200) logDiv.removeChild(logDiv.firstChild);
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+function restartAnalysis() {
+  if (analysisTimer) clearInterval(analysisTimer);
+  const ms = parseInt(cfg('interval').value);
+  analysisTimer = setInterval(analyzeFrame, ms);
+}
+
+// --- Audio alert ---
+function playBeep(state) {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.type = 'sine';
+  osc.frequency.value = state === 'GREEN' ? 880 : state === 'RED' ? 440 : 660;
+  gain.gain.value = 0.15;
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.1);
+}
+
+// --- Overlay draw loop ---
+function drawOverlay() {
+  overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+  if (roi) {
+    overlayCtx.strokeStyle = '#00ffff';
+    overlayCtx.lineWidth = 2;
+    overlayCtx.setLineDash([6, 3]);
+    overlayCtx.strokeRect(roi.x, roi.y, roi.w, roi.h);
+    overlayCtx.setLineDash([]);
+
+    // State label near ROI
+    if (currentState) {
+      overlayCtx.font = 'bold 16px system-ui';
+      overlayCtx.fillStyle = '#00ffff';
+      overlayCtx.fillText(currentState, roi.x, roi.y - 6);
+    }
+  }
+  requestAnimationFrame(drawOverlay);
+}
+
+// --- Init ---
+(async () => {
+  await enumerateCameras();
+  await startCamera();
+  restartAnalysis();
+  drawOverlay();
+})();
+</script>
+</body>
+</html>
