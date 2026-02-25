@@ -4,6 +4,10 @@ A webcam-based indicator light detector. Point a camera at an indicator light, d
 
 Built as a single HTML file wrapped in [Tauri](https://v2.tauri.app/) for desktop distribution.
 
+## Authorship
+
+Vibe-coded using [Claude Opus 4.6](https://www.anthropic.com/claude) via [Claude Code](https://claude.ai/code).
+
 ## Building
 
 ### Prerequisites
